@@ -127,6 +127,7 @@ services:
     environment:
       QUAY_VERSION: local-dev
       QUAY_HOTRELOAD: "true"
+      REPRO_TAG_RACE: "1"  # TEMPORARY: Widen race window for PROJQUAY-10340 reproduction
       DEBUGLOG: "true"
       IGNORE_VALIDATION: "true"
       QUAYRUN: /tmp

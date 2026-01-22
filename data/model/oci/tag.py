@@ -456,6 +456,19 @@ def retarget_tag(
         # Lookup an existing tag in the repository with the same name and, if present, mark it
         # as expired.
         existing_tag = get_tag(manifest.repository_id, tag_name)
+
+        # TEMPORARY: Widen race window for PROJQUAY-10340 reproduction - REMOVE BEFORE COMMIT
+        import os
+        import time
+
+        if os.environ.get("REPRO_TAG_RACE"):
+            import logging
+
+            logging.getLogger(__name__).warning(
+                f"REPRO_TAG_RACE: sleeping 200ms for tag '{tag_name}' existing={existing_tag is not None}"
+            )
+            time.sleep(0.2)
+
         if existing_tag is not None:
             # Check if the existing tag is immutable
             if features.IMMUTABLE_TAGS and existing_tag.immutable:
