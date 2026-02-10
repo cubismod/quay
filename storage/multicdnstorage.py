@@ -6,12 +6,12 @@ from storage import AkamaiS3Storage
 from storage.basestorage import BaseStorageV2, InvalidStorageConfigurationException
 from storage.cloud import CloudFrontedS3Storage
 from storage.cloudflarestorage import CloudFlareS3Storage
-from util.ipresolver import GEOIP_CONTINENT_CODES
 
 logger = logging.getLogger(__name__)
 
 from storage.storagecontext import StorageContext
 
+VALID_CONTINENT_CODES = ["AF", "AN", "AS", "EU", "NA", "OC", "SA"]
 VALID_RULE_KEYS = ["namespace", "continent", "host", "target"]
 
 MULTICDN_STORAGE_PROVIDER_CLASSES = {
@@ -36,7 +36,7 @@ class MultiCDNStorage(BaseStorageV2):
     Currently supported rules:
         - namespace (could be an org or a user)
         - host (based on the host header, return a different CDN)
-        - continent (Source IP continent. Possible values based on GeoIP Database continent codes)
+        - continent (from a geo header injected by WAF/CDN, e.g. GEO_HEADER_NAME config)
 
     Example Config:
         - MultiCDNStorage
@@ -80,6 +80,8 @@ class MultiCDNStorage(BaseStorageV2):
         super().__init__()
 
         self.context = context
+        config = context.config_provider.get_config() if context.config_provider else None
+        self.geo_header_name = config.get("GEO_HEADER_NAME") if config else None
         self._validate_config(storage_config, providers, default_provider, rules)
         self.providers = self._init_providers(storage_config, providers)
         self.default_provider = self.providers.get(default_provider)
@@ -137,9 +139,9 @@ class MultiCDNStorage(BaseStorageV2):
                     f'{rule} Invalid: {rule["target"]} not in the configured targets {providers.keys()}'
                 )
 
-            if rule.get("continent") and rule["continent"] not in GEOIP_CONTINENT_CODES:
+            if rule.get("continent") and rule["continent"] not in VALID_CONTINENT_CODES:
                 raise InvalidStorageConfigurationException(
-                    f'{rule} Invalid: {rule["continent"]} not a valid continent. Should be on of {GEOIP_CONTINENT_CODES}'
+                    f'{rule} Invalid: {rule["continent"]} not a valid continent. Should be one of {VALID_CONTINENT_CODES}'
                 )
 
     def _init_providers(self, storage_config, providers_config):
@@ -164,9 +166,20 @@ class MultiCDNStorage(BaseStorageV2):
 
         return True
 
+    def _get_continent_from_header(self):
+        if not self.geo_header_name:
+            return None
+
+        if not has_request_context():
+            return None
+
+        value = request.headers.get(self.geo_header_name)
+        if value and value in VALID_CONTINENT_CODES:
+            return value
+        return None
+
     def find_matching_provider(self, namespace, request_ip, host):
-        resolved_ip = self.context.ip_resolver.resolve_ip(request_ip)
-        continent = resolved_ip.continent if resolved_ip and resolved_ip.continent else None
+        continent = self._get_continent_from_header()
 
         provider = None
         for rule in self.rules:

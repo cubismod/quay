@@ -1,6 +1,7 @@
 import json
 
 import pytest
+from flask import Flask
 
 from app import config_provider
 from storage import (
@@ -125,13 +126,14 @@ def test_should_fail_bad_target_in_rule(context, app):
 
 
 @pytest.mark.parametrize(
-    "rule, namespace, ip, host, expected",
+    "rule, namespace, ip, host, geo_header, expected",
     [
         pytest.param(
             {"continent": "NA", "target": "CloudFlare"},
             "test",
             "8.8.8.8",
             None,
+            "NA",
             CloudFlareS3Storage,
         ),
         pytest.param(
@@ -139,6 +141,7 @@ def test_should_fail_bad_target_in_rule(context, app):
             "test",
             "8.8.8.8",
             "quay.io",
+            None,
             CloudFlareS3Storage,
         ),
         pytest.param(
@@ -146,6 +149,7 @@ def test_should_fail_bad_target_in_rule(context, app):
             "test",
             "8.8.8.8",
             "quay.io",
+            None,
             CloudFlareS3Storage,
         ),
         pytest.param(
@@ -153,13 +157,15 @@ def test_should_fail_bad_target_in_rule(context, app):
             "test",
             "8.8.8.8",
             None,
+            "NA",
             CloudFrontedS3Storage,
-        ),  # no rule match
+        ),  # continent mismatch, no rule match
         pytest.param(
             {"continent": "NA", "target": "Akamai"},
             "test",
             "8.8.8.8",
             None,
+            "NA",
             AkamaiS3Storage,
         ),
         pytest.param(
@@ -167,6 +173,7 @@ def test_should_fail_bad_target_in_rule(context, app):
             "test",
             "8.8.8.8",
             "quay.io",
+            None,
             AkamaiS3Storage,
         ),
         pytest.param(
@@ -174,6 +181,7 @@ def test_should_fail_bad_target_in_rule(context, app):
             "test",
             "8.8.8.8",
             "quay.io",
+            None,
             AkamaiS3Storage,
         ),
         pytest.param(
@@ -181,17 +189,31 @@ def test_should_fail_bad_target_in_rule(context, app):
             "test",
             "8.8.8.8",
             None,
+            "NA",
             CloudFrontedS3Storage,
-        ),  # no rule match
+        ),  # continent mismatch, no rule match
+        pytest.param(
+            {"continent": "NA", "target": "CloudFlare"},
+            "test",
+            "8.8.8.8",
+            None,
+            None,
+            CloudFrontedS3Storage,
+        ),  # no geo header, continent rule doesn't match
     ],
 )
-def test_rule_match(rule, namespace, ip, host, expected):
+def test_rule_match(rule, namespace, ip, host, geo_header, expected, app):
     test_config = json.loads(_TEST_CONFIG_JSON)
     test_config["rules"] = [rule]
 
     context = StorageContext("nyc", None, config_provider, IPResolver(app))
-
     engine = MultiCDNStorage(context, **test_config)
+    engine.geo_header_name = "X-Geo-Continent"
 
-    provider = engine.find_matching_provider(namespace, ip, host)
-    assert isinstance(provider, expected)
+    headers = {}
+    if geo_header:
+        headers["X-Geo-Continent"] = geo_header
+
+    with app.test_request_context(headers=headers):
+        provider = engine.find_matching_provider(namespace, ip, host)
+        assert isinstance(provider, expected)

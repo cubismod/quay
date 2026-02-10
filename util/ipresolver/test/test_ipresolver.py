@@ -1,8 +1,7 @@
-from test.fixtures import *
-
 import pytest
 from mock import patch
 
+from test.fixtures import *
 from util.ipresolver import IPResolver, ResolvedLocation
 
 
@@ -78,25 +77,25 @@ def test_resolved(aws_ip_range_data, test_ip_range_cache, test_aws_ip, app):
         provider="aws",
         service=None,
         sync_token=123456789,
-        country_iso_code="US",
-        aws_region="GLOBAL",  # DoD assigned
-        continent="NA",
+        country_iso_code=None,
+        aws_region="GLOBAL",
+        continent=None,
     )
     assert ipresolver.resolve_ip("4.0.0.2") == ResolvedLocation(
         provider="aws",
         service=None,
         sync_token=123456789,
-        country_iso_code="US",
+        country_iso_code=None,
         aws_region="us-east-1",
-        continent="NA",
+        continent=None,
     )
     assert ipresolver.resolve_ip("56.0.0.2") == ResolvedLocation(
         provider="internet",
-        service="US",
+        service=None,
         sync_token=123456789,
-        country_iso_code="US",  # USPS assigned
+        country_iso_code=None,
         aws_region=None,
-        continent="NA",
+        continent=None,
     )
     assert ipresolver.resolve_ip("127.0.0.1") == ResolvedLocation(
         provider="internet",

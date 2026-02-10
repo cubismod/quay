@@ -692,6 +692,14 @@ class DefaultConfig(ImmutableConfig):
     # The API Key to use when requesting IP information.
     IP_DATA_API_KEY = None
 
+    # Set this to the name of an HTTP request header that carries the client's
+    # continent code (one of AF, AN, AS, EU, NA, OC, SA). The header itself must
+    # be injected upstream, e.g. by an AWS WAF geo-match rule that adds a custom
+    # header to every request. MultiCDNStorage reads this header to select the
+    # optimal CDN provider per continent.
+    # Example: GEO_HEADER_NAME = "X-Geo-Continent"  (WAF inserts "X-Geo-Continent: NA")
+    GEO_HEADER_NAME: Optional[str] = None
+
     # For Billing Support Only: The number of allowed builds on a namespace that has been billed
     # successfully.
     BILLED_NAMESPACE_MAXIMUM_BUILD_COUNT: Optional[int] = None
@@ -702,7 +710,6 @@ class DefaultConfig(ImmutableConfig):
         "endpoint": ("127.0.0.1", 18080),
         "repository_blob_cache_ttl": "60s",
         "catalog_page_cache_ttl": "60s",
-        "namespace_geo_restrictions_cache_ttl": "240s",
         "active_repo_tags_cache_ttl": "120s",
         "value_size_limit": "1MiB",
     }

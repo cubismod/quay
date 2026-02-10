@@ -1,16 +1,12 @@
 import json
 import logging
 import os
-import time
 from abc import ABCMeta, abstractmethod
 from collections import namedtuple
-from threading import Lock, Thread
 from typing import Dict
 
-import geoip2.database
-import geoip2.errors
 import requests
-from cachetools.func import lru_cache, ttl_cache
+from cachetools.func import ttl_cache
 from netaddr import AddrFormatError, IPAddress, IPNetwork, IPSet
 from six import add_metaclass
 
@@ -22,9 +18,6 @@ ResolvedLocation = namedtuple(
 )
 
 AWS_SERVICES = {"EC2", "CODEBUILD"}
-
-# https://support.maxmind.com/hc/en-us/articles/4414877149467-IP-Geolocation-Data#h_01FRRGRYTGZB29ERDBZCX3MR8Q
-GEOIP_CONTINENT_CODES = ["AF", "AN", "AS", "EU", "NA", "OC", "SA"]
 
 logger = logging.getLogger(__name__)
 
@@ -85,11 +78,6 @@ class IPResolver(IPResolverInterface):
     def __init__(self, app):
         self.app = app
 
-        # resolve absolute path to file
-        path = os.path.dirname(os.path.abspath(__file__))
-        file_path = os.path.join(path, "GeoLite2-Country.mmdb")
-        self.geoip_db = geoip2.database.Reader(file_path)
-
         self.amazon_ranges: Dict[str, IPSet] = None
         self.sync_token = None
 
@@ -149,35 +137,18 @@ class IPResolver(IPResolverInterface):
         except AddrFormatError:
             return ResolvedLocation("invalid_ip", None, self.sync_token, None, None, None)
 
-        # Try geoip classification
-        try:
-            geoinfo = self.geoip_db.country(ip_address)
-        except geoip2.errors.AddressNotFoundError:
-            geoinfo = None
-
         aws_region = self.get_aws_ip_region(parsed_ip)
 
-        # Not an AWS IP
         if not aws_region:
-            if geoinfo:
-                return ResolvedLocation(
-                    "internet",
-                    geoinfo.country.iso_code,
-                    self.sync_token,
-                    geoinfo.country.iso_code,
-                    None,
-                    geoinfo.continent.code,
-                )
-
             return ResolvedLocation("internet", None, self.sync_token, None, None, None)
 
         return ResolvedLocation(
             "aws",
             None,
             self.sync_token,
-            geoinfo.country.iso_code if geoinfo else None,
+            None,
             aws_region,
-            geoinfo.continent.code if geoinfo else None,
+            None,
         )
 
     def get_aws_ip_region(self, ip_address: IPAddress):
