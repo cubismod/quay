@@ -184,8 +184,8 @@ services:
       - "8443:8443"
     environment:
       QUAY_VERSION: local-dev
-      QUAY_HOTRELOAD: "true"
-      DEBUGLOG: "true"
+      QUAY_HOTRELOAD: "false"
+      DEBUGLOG: "false"
       IGNORE_VALIDATION: "true"
       QUAYRUN: /tmp
       WORKER_COUNT_UNSUPPORTED_MINIMUM: "1"
