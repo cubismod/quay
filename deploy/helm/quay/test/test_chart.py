@@ -94,6 +94,44 @@ def test_image_helper_prefers_digest_over_tag():
     assert probe["data"]["image"] == ("quay.io/projectquay/quay@sha256:0123456789abcdef")
 
 
+@pytest.mark.parametrize("values_file", ["runtime.yaml", "migration.yaml"])
+def test_image_digest_takes_precedence_for_workloads(values_file):
+    resources = render(
+        values_file,
+        "--set-string",
+        "image.tag=3.18.0",
+        "--set-string",
+        "image.digest=sha256:0123456789abcdef",
+    )
+    workloads = [resource for resource in resources if resource["kind"] in {"Deployment", "Job"}]
+    assert workloads
+    assert {
+        container["image"]
+        for workload in workloads
+        for container in workload["spec"]["template"]["spec"]["containers"]
+    } == {"quay.io/projectquay/quay@sha256:0123456789abcdef"}
+
+
+@pytest.mark.parametrize("values_file", ["runtime.yaml", "migration.yaml", "ingress.yaml"])
+def test_enabled_workload_requires_existing_config_secret(values_file):
+    result = subprocess.run(
+        [
+            "helm",
+            "lint",
+            str(CHART),
+            "-f",
+            str(CHART / "test/values" / values_file),
+            "--set-string",
+            "config.existingSecret=",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == 1
+    assert "/config/existingSecret" in output
+
+
 def test_runtime_renders_app_and_shared_resources():
     resources = render("runtime.yaml")
     deployment = next(
@@ -370,6 +408,41 @@ def test_worker_services_have_independent_flags_and_worker_selectors():
     assert services[0]["spec"]["selector"]["app.kubernetes.io/component"] == "bkg-workers"
 
 
+def test_service_selectors_match_workload_pod_labels():
+    resources = render("runtime.yaml")
+    pod_labels_by_component = {
+        deployment["spec"]["template"]["metadata"]["labels"][
+            "app.kubernetes.io/component"
+        ]: deployment["spec"]["template"]["metadata"]["labels"]
+        for deployment in by_kind(resources, "Deployment")
+    }
+    services = by_kind(resources, "Service")
+    assert services
+    for service in services:
+        component = service["metadata"]["labels"]["app.kubernetes.io/component"]
+        assert service["spec"]["selector"] == pod_labels_by_component[component]
+
+
+@pytest.mark.parametrize("section", ["app", "workers"])
+def test_deployments_reject_migration_capable_entrypoints(section):
+    result = subprocess.run(
+        [
+            "helm",
+            "lint",
+            str(CHART),
+            "-f",
+            str(CHART / "test/values/runtime.yaml"),
+            "--set-string",
+            f"{section}.entrypoint=registry",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == 1
+    assert f"/{section}/entrypoint" in output
+
+
 def test_migration_only_mode():
     resources = render("migration.yaml")
     assert not by_kind(resources, "Deployment")
@@ -466,6 +539,33 @@ def test_ingress_quotes_scalar_like_string_values():
     )[0]
     assert ingress["spec"]["ingressClassName"] == "true"
     assert ingress["spec"]["tls"][0]["secretName"] == "123"
+
+
+@pytest.mark.parametrize("values_file", ["runtime.yaml", "migration.yaml", "ingress.yaml"])
+def test_chart_does_not_render_secret_management_resources(values_file):
+    resources = render(values_file)
+    assert all(
+        resource["kind"]
+        not in {
+            "ExternalSecret",
+            "SecretStore",
+            "ClusterSecretStore",
+            "VaultAuth",
+            "VaultConnection",
+            "VaultStaticSecret",
+        }
+        for resource in resources
+    )
+    assert all(
+        not resource["apiVersion"].startswith(
+            (
+                "external-secrets.io/",
+                "generators.external-secrets.io/",
+                "secrets.hashicorp.com/",
+            )
+        )
+        for resource in resources
+    )
 
 
 @pytest.mark.parametrize(

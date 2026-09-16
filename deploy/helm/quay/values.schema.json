@@ -31,7 +31,7 @@
       "properties": {
         "enabled": {"type": "boolean"},
         "replicaCount": {"type": "integer", "minimum": 0},
-        "entrypoint": {"type": "string"},
+        "entrypoint": {"type": "string", "const": "registry-nomigrate"},
         "minReadySeconds": {"type": "integer", "minimum": 0},
         "progressDeadlineSeconds": {"type": "integer", "minimum": 0},
         "revisionHistoryLimit": {"type": "integer", "minimum": 0},
@@ -130,7 +130,7 @@
       "properties": {
         "enabled": {"type": "boolean"},
         "replicaCount": {"type": "integer", "minimum": 0},
-        "entrypoint": {"type": "string"},
+        "entrypoint": {"type": "string", "const": "registry-nomigrate"},
         "minReadySeconds": {"type": "integer", "minimum": 0},
         "progressDeadlineSeconds": {"type": "integer", "minimum": 0},
         "revisionHistoryLimit": {"type": "integer", "minimum": 0},
