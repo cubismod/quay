@@ -7,10 +7,74 @@ image:
 config:
   existingSecret: ""
 
+serviceAccount:
+  create: true
+  name: ""
+
 app:
   enabled: false
   replicaCount: 1
   entrypoint: registry-nomigrate
+  minReadySeconds: 0
+  progressDeadlineSeconds: 600
+  revisionHistoryLimit: 10
+  terminationGracePeriodSeconds: 60
+  strategy:
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  resources:
+    limits:
+      memory: 4096Mi
+    requests:
+      cpu: "1"
+      memory: 4096Mi
+  startupProbe:
+    failureThreshold: 20
+    timeoutSeconds: 60
+    periodSeconds: 60
+  readinessProbe:
+    failureThreshold: 3
+    successThreshold: 1
+    initialDelaySeconds: 15
+    periodSeconds: 30
+    timeoutSeconds: 10
+  livenessProbe:
+    failureThreshold: 3
+    periodSeconds: 10
+  environment:
+    DEBUGLOG: "false"
+    IGNORE_VALIDATION: "false"
+    QUAY_LOGGING: stdout
+    WORKER_CONNECTION_COUNT_REGISTRY: "50"
+    DB_CONNECTION_POOLING: "true"
+    WORKER_COUNT_WEB: "4"
+    WORKER_COUNT_REGISTRY: "28"
+    QUAY_SERVICES: ""
+    QUAY_OVERRIDE_SERVICES: ""
+  nodeSelector:
+    part-of: quay
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 1
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app.kubernetes.io/component
+                  operator: In
+                  values:
+                    - app
+            topologyKey: kubernetes.io/hostname
+  services:
+    https:
+      enabled: true
+      port: 443
+      targetPort: 8443
+    metrics:
+      enabled: true
+      port: 9091
+      targetPort: 9091
 
 workers:
   enabled: false

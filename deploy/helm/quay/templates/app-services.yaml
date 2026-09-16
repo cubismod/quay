@@ -1,0 +1,39 @@
+{{- if and .Values.app.enabled .Values.app.services.https.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ printf "%s-https" (include "quay.fullname" .) | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "quay.labels" . | nindent 4 }}
+    app.kubernetes.io/component: app
+spec:
+  type: ClusterIP
+  ports:
+    - name: https
+      protocol: TCP
+      port: {{ .Values.app.services.https.port }}
+      targetPort: {{ .Values.app.services.https.targetPort }}
+  selector:
+    {{- include "quay.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: app
+{{- end }}
+{{- if and .Values.app.enabled .Values.app.services.metrics.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ printf "%s-metrics" (include "quay.fullname" .) | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "quay.labels" . | nindent 4 }}
+    app.kubernetes.io/component: app
+spec:
+  type: ClusterIP
+  ports:
+    - name: metrics
+      protocol: TCP
+      port: {{ .Values.app.services.metrics.port }}
+      targetPort: {{ .Values.app.services.metrics.targetPort }}
+  selector:
+    {{- include "quay.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: app
+{{- end }}

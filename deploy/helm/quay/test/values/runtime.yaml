@@ -1,1 +1,15 @@
-{}
+image:
+  tag: "3.15.0"
+
+config:
+  existingSecret: quay-config
+
+app:
+  enabled: true
+  replicaCount: 2
+  resources:
+    limits:
+      memory: 2Gi
+    requests:
+      cpu: 500m
+      memory: 1Gi

@@ -1,0 +1,111 @@
+{{- if .Values.app.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ printf "%s-app" (include "quay.fullname" .) | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "quay.labels" . | nindent 4 }}
+    app.kubernetes.io/component: app
+spec:
+  replicas: {{ .Values.app.replicaCount }}
+  minReadySeconds: {{ .Values.app.minReadySeconds }}
+  progressDeadlineSeconds: {{ .Values.app.progressDeadlineSeconds }}
+  revisionHistoryLimit: {{ .Values.app.revisionHistoryLimit }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: {{ .Values.app.strategy.rollingUpdate.maxUnavailable }}
+      maxSurge: {{ .Values.app.strategy.rollingUpdate.maxSurge }}
+  selector:
+    matchLabels:
+      {{- include "quay.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: app
+  template:
+    metadata:
+      labels:
+        {{- include "quay.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: app
+    spec:
+      terminationGracePeriodSeconds: {{ .Values.app.terminationGracePeriodSeconds }}
+      serviceAccountName: {{ default (include "quay.fullname" .) .Values.serviceAccount.name }}
+      volumes:
+        - name: configvolume
+          secret:
+            secretName: {{ .Values.config.existingSecret }}
+      nodeSelector:
+        {{- toYaml .Values.app.nodeSelector | nindent 8 }}
+      affinity:
+        {{- toYaml .Values.app.affinity | nindent 8 }}
+      containers:
+        - name: quay-app
+          image: {{ include "quay.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /quay-registry/quay-entrypoint.sh
+            - {{ .Values.app.entrypoint }}
+          ports:
+            - name: https
+              containerPort: 8443
+            - name: metrics
+              containerPort: 9091
+          volumeMounts:
+            - name: configvolume
+              mountPath: /conf/stack
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - sleep 20 && kill -QUIT $(cat /tmp/nginx.pid)
+          startupProbe:
+            failureThreshold: {{ .Values.app.startupProbe.failureThreshold }}
+            timeoutSeconds: {{ .Values.app.startupProbe.timeoutSeconds }}
+            periodSeconds: {{ .Values.app.startupProbe.periodSeconds }}
+            httpGet:
+              path: /health/instance
+              port: 8443
+              scheme: HTTPS
+          readinessProbe:
+            failureThreshold: {{ .Values.app.readinessProbe.failureThreshold }}
+            successThreshold: {{ .Values.app.readinessProbe.successThreshold }}
+            initialDelaySeconds: {{ .Values.app.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.app.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.app.readinessProbe.timeoutSeconds }}
+            httpGet:
+              path: /health/endtoend
+              port: 8443
+              scheme: HTTPS
+          livenessProbe:
+            failureThreshold: {{ .Values.app.livenessProbe.failureThreshold }}
+            periodSeconds: {{ .Values.app.livenessProbe.periodSeconds }}
+            tcpSocket:
+              port: 8443
+          resources:
+            {{- toYaml .Values.app.resources | nindent 12 }}
+          env:
+            - name: QE_K8S_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: QE_K8S_CONFIG_SECRET
+              value: {{ .Values.config.existingSecret | quote }}
+            - name: DEBUGLOG
+              value: {{ .Values.app.environment.DEBUGLOG | quote }}
+            - name: IGNORE_VALIDATION
+              value: {{ .Values.app.environment.IGNORE_VALIDATION | quote }}
+            - name: QUAY_LOGGING
+              value: {{ .Values.app.environment.QUAY_LOGGING | quote }}
+            - name: WORKER_CONNECTION_COUNT_REGISTRY
+              value: {{ .Values.app.environment.WORKER_CONNECTION_COUNT_REGISTRY | quote }}
+            - name: DB_CONNECTION_POOLING
+              value: {{ .Values.app.environment.DB_CONNECTION_POOLING | quote }}
+            - name: WORKER_COUNT_WEB
+              value: {{ .Values.app.environment.WORKER_COUNT_WEB | quote }}
+            - name: WORKER_COUNT_REGISTRY
+              value: {{ .Values.app.environment.WORKER_COUNT_REGISTRY | quote }}
+            - name: QUAY_SERVICES
+              value: {{ .Values.app.environment.QUAY_SERVICES | quote }}
+            - name: QUAY_OVERRIDE_SERVICES
+              value: {{ .Values.app.environment.QUAY_OVERRIDE_SERVICES | quote }}
+{{- end }}

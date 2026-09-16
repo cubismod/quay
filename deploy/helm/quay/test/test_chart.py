@@ -27,7 +27,7 @@ def render(values_file: str, *helm_args: str) -> list[dict]:
 
 def helper_probe(*helm_args: str) -> dict:
     resources = render(
-        "runtime.yaml",
+        "migration.yaml",
         "--skip-schema-validation",
         "--set",
         "_testRenderHelpers=true",
@@ -35,6 +35,10 @@ def helper_probe(*helm_args: str) -> dict:
     )
     assert len(resources) == 1
     return resources[0]
+
+
+def by_kind(resources, kind):
+    return [resource for resource in resources if resource["kind"] == kind]
 
 
 def test_chart_metadata():
@@ -86,6 +90,164 @@ def test_image_helper_prefers_digest_over_tag():
         "image.digest=sha256:0123456789abcdef",
     )
     assert probe["data"]["image"] == ("quay.io/projectquay/quay@sha256:0123456789abcdef")
+
+
+def test_runtime_renders_app_and_shared_resources():
+    resources = render("runtime.yaml")
+    deployment = next(
+        item
+        for item in by_kind(resources, "Deployment")
+        if item["metadata"]["name"] == "test-quay-app"
+    )
+    container = deployment["spec"]["template"]["spec"]["containers"][0]
+    assert deployment["spec"]["replicas"] == 2
+    assert container["image"] == "quay.io/projectquay/quay:3.15.0"
+    assert container["command"] == [
+        "/quay-registry/quay-entrypoint.sh",
+        "registry-nomigrate",
+    ]
+    assert (
+        deployment["spec"]["template"]["spec"]["volumes"][0]["secret"]["secretName"]
+        == "quay-config"
+    )
+    assert {item["kind"] for item in resources} >= {
+        "ServiceAccount",
+        "Role",
+        "RoleBinding",
+        "Service",
+    }
+
+
+def test_app_preserves_runtime_behavior():
+    resources = render("runtime.yaml")
+    deployment = by_kind(resources, "Deployment")[0]
+    pod = deployment["spec"]["template"]["spec"]
+    container = pod["containers"][0]
+
+    assert deployment["spec"]["strategy"] == {
+        "type": "RollingUpdate",
+        "rollingUpdate": {"maxUnavailable": 0, "maxSurge": 1},
+    }
+    assert deployment["spec"]["selector"]["matchLabels"] == {
+        "app.kubernetes.io/name": "quay",
+        "app.kubernetes.io/instance": "test",
+        "app.kubernetes.io/component": "app",
+    }
+    assert pod["serviceAccountName"] == "test-quay"
+    assert pod["terminationGracePeriodSeconds"] == 60
+    assert pod["nodeSelector"] == {"part-of": "quay"}
+    assert pod["affinity"]["podAntiAffinity"]["preferredDuringSchedulingIgnoredDuringExecution"][0][
+        "podAffinityTerm"
+    ]["labelSelector"]["matchExpressions"][0] == {
+        "key": "app.kubernetes.io/component",
+        "operator": "In",
+        "values": ["app"],
+    }
+    assert container["volumeMounts"] == [{"name": "configvolume", "mountPath": "/conf/stack"}]
+    assert container["lifecycle"]["preStop"]["exec"]["command"] == [
+        "/bin/sh",
+        "-c",
+        "sleep 20 && kill -QUIT $(cat /tmp/nginx.pid)",
+    ]
+    assert container["startupProbe"] == {
+        "failureThreshold": 20,
+        "timeoutSeconds": 60,
+        "periodSeconds": 60,
+        "httpGet": {"path": "/health/instance", "port": 8443, "scheme": "HTTPS"},
+    }
+    assert container["readinessProbe"] == {
+        "failureThreshold": 3,
+        "successThreshold": 1,
+        "initialDelaySeconds": 15,
+        "periodSeconds": 30,
+        "timeoutSeconds": 10,
+        "httpGet": {"path": "/health/endtoend", "port": 8443, "scheme": "HTTPS"},
+    }
+    assert container["livenessProbe"] == {
+        "failureThreshold": 3,
+        "periodSeconds": 10,
+        "tcpSocket": {"port": 8443},
+    }
+    assert container["resources"] == {
+        "limits": {"memory": "2Gi"},
+        "requests": {"cpu": "500m", "memory": "1Gi"},
+    }
+    environment = {item["name"]: item for item in container["env"]}
+    assert environment["QE_K8S_NAMESPACE"]["valueFrom"]["fieldRef"]["fieldPath"] == (
+        "metadata.namespace"
+    )
+    assert environment["QE_K8S_CONFIG_SECRET"]["value"] == "quay-config"
+    assert {
+        name: environment[name]["value"]
+        for name in {
+            "DEBUGLOG",
+            "IGNORE_VALIDATION",
+            "QUAY_LOGGING",
+            "WORKER_CONNECTION_COUNT_REGISTRY",
+            "DB_CONNECTION_POOLING",
+            "WORKER_COUNT_WEB",
+            "WORKER_COUNT_REGISTRY",
+            "QUAY_SERVICES",
+            "QUAY_OVERRIDE_SERVICES",
+        }
+    } == {
+        "DEBUGLOG": "false",
+        "IGNORE_VALIDATION": "false",
+        "QUAY_LOGGING": "stdout",
+        "WORKER_CONNECTION_COUNT_REGISTRY": "50",
+        "DB_CONNECTION_POOLING": "true",
+        "WORKER_COUNT_WEB": "4",
+        "WORKER_COUNT_REGISTRY": "28",
+        "QUAY_SERVICES": "",
+        "QUAY_OVERRIDE_SERVICES": "",
+    }
+
+
+def test_app_services_have_independent_flags_and_app_selectors():
+    resources = render("runtime.yaml", "--set", "app.services.metrics.enabled=false")
+    services = by_kind(resources, "Service")
+    assert [service["metadata"]["name"] for service in services] == ["test-quay-https"]
+    assert services[0]["spec"]["ports"] == [
+        {"name": "https", "protocol": "TCP", "port": 443, "targetPort": 8443}
+    ]
+    assert services[0]["spec"]["selector"]["app.kubernetes.io/component"] == "app"
+
+    resources = render("runtime.yaml", "--set", "app.services.https.enabled=false")
+    services = by_kind(resources, "Service")
+    assert [service["metadata"]["name"] for service in services] == ["test-quay-metrics"]
+    assert services[0]["spec"]["ports"] == [
+        {"name": "metrics", "protocol": "TCP", "port": 9091, "targetPort": 9091}
+    ]
+    assert services[0]["spec"]["selector"]["app.kubernetes.io/component"] == "app"
+
+
+def test_shared_rbac_uses_existing_service_account():
+    resources = render(
+        "runtime.yaml",
+        "--set",
+        "serviceAccount.create=false",
+        "--set-string",
+        "serviceAccount.name=existing-quay",
+    )
+    assert not by_kind(resources, "ServiceAccount")
+    deployment = by_kind(resources, "Deployment")[0]
+    role = by_kind(resources, "Role")[0]
+    role_binding = by_kind(resources, "RoleBinding")[0]
+    assert deployment["spec"]["template"]["spec"]["serviceAccountName"] == ("existing-quay")
+    assert role_binding["subjects"] == [{"kind": "ServiceAccount", "name": "existing-quay"}]
+    assert role["rules"] == [
+        {
+            "apiGroups": [""],
+            "resources": ["secrets"],
+            "verbs": ["get", "patch", "update"],
+        },
+        {"apiGroups": [""], "resources": ["namespaces"], "verbs": ["get"]},
+        {
+            "apiGroups": ["apps"],
+            "resources": ["deployments"],
+            "verbs": ["get", "list", "patch", "update", "watch"],
+        },
+    ]
 
 
 @pytest.mark.parametrize("section", ["app", "workers"])
