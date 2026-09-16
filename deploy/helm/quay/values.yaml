@@ -1,0 +1,22 @@
+image:
+  repository: quay.io/projectquay/quay
+  tag: latest
+  digest: ""
+  pullPolicy: IfNotPresent
+
+config:
+  existingSecret: ""
+
+app:
+  enabled: false
+  replicaCount: 1
+
+workers:
+  enabled: false
+  replicaCount: 1
+
+migration:
+  enabled: false
+
+ingress:
+  enabled: false

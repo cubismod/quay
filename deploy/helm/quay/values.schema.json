@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["image", "config", "app", "workers", "migration", "ingress"],
+  "properties": {
+    "image": {
+      "type": "object",
+      "properties": {
+        "repository": {"type": "string"},
+        "tag": {"type": "string"},
+        "digest": {"type": "string"},
+        "pullPolicy": {"type": "string"}
+      }
+    },
+    "config": {
+      "type": "object",
+      "properties": {
+        "existingSecret": {"type": "string"}
+      }
+    },
+    "app": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "replicaCount": {"type": "integer", "minimum": 0}
+      }
+    },
+    "workers": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "replicaCount": {"type": "integer", "minimum": 0}
+      }
+    },
+    "migration": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"}
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"}
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "anyOf": [
+          {
+            "properties": {
+              "app": {
+                "properties": {"enabled": {"const": true}},
+                "required": ["enabled"]
+              }
+            },
+            "required": ["app"]
+          },
+          {
+            "properties": {
+              "workers": {
+                "properties": {"enabled": {"const": true}},
+                "required": ["enabled"]
+              }
+            },
+            "required": ["workers"]
+          },
+          {
+            "properties": {
+              "migration": {
+                "properties": {"enabled": {"const": true}},
+                "required": ["enabled"]
+              }
+            },
+            "required": ["migration"]
+          }
+        ]
+      },
+      "then": {
+        "properties": {
+          "config": {
+            "properties": {
+              "existingSecret": {"minLength": 1}
+            }
+          }
+        }
+      }
+    }
+  ]
+}
