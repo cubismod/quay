@@ -10,10 +10,12 @@ config:
 app:
   enabled: false
   replicaCount: 1
+  entrypoint: registry-nomigrate
 
 workers:
   enabled: false
   replicaCount: 1
+  entrypoint: registry-nomigrate
 
 migration:
   enabled: false

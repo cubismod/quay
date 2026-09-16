@@ -1,0 +1,14 @@
+{{- if (index .Values "_testRenderHelpers") }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "quay.fullname" . }}
+  labels:
+    {{- include "quay.labels" . | nindent 4 }}
+data:
+  appEntrypoint: {{ .Values.app.entrypoint | quote }}
+  workerEntrypoint: {{ .Values.workers.entrypoint | quote }}
+  image: {{ include "quay.image" . | quote }}
+  selectorLabels: |
+    {{- include "quay.selectorLabels" . | nindent 4 }}
+{{- end }}

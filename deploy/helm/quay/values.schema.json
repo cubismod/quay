@@ -23,14 +23,16 @@
       "type": "object",
       "properties": {
         "enabled": {"type": "boolean"},
-        "replicaCount": {"type": "integer", "minimum": 0}
+        "replicaCount": {"type": "integer", "minimum": 0},
+        "entrypoint": {"type": "string"}
       }
     },
     "workers": {
       "type": "object",
       "properties": {
         "enabled": {"type": "boolean"},
-        "replicaCount": {"type": "integer", "minimum": 0}
+        "replicaCount": {"type": "integer", "minimum": 0},
+        "entrypoint": {"type": "string"}
       }
     },
     "migration": {
