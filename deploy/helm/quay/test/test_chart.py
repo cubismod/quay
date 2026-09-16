@@ -31,6 +31,8 @@ def helper_probe(*helm_args: str) -> dict:
         "--skip-schema-validation",
         "--set",
         "_testRenderHelpers=true",
+        "--set",
+        "migration.enabled=false",
         *helm_args,
     )
     assert len(resources) == 1
@@ -366,6 +368,115 @@ def test_worker_services_have_independent_flags_and_worker_selectors():
         {"name": "metrics", "protocol": "TCP", "port": 9091, "targetPort": 9091}
     ]
     assert services[0]["spec"]["selector"]["app.kubernetes.io/component"] == "bkg-workers"
+
+
+def test_migration_only_mode():
+    resources = render("migration.yaml")
+    assert not by_kind(resources, "Deployment")
+    assert {resource["kind"] for resource in resources} >= {
+        "ServiceAccount",
+        "Role",
+        "RoleBinding",
+        "Job",
+    }
+
+    job = by_kind(resources, "Job")[0]
+    pod = job["spec"]["template"]["spec"]
+    container = pod["containers"][0]
+    assert job["metadata"]["name"] == "test-quay-migration"
+    assert job["metadata"]["labels"]["app.kubernetes.io/component"] == "db-migration"
+    assert job["metadata"]["annotations"] == {"example.com/migration-purpose": "schema-upgrade"}
+    assert job["spec"]["activeDeadlineSeconds"] == 1800
+    assert job["spec"]["backoffLimit"] == 1
+    assert pod["restartPolicy"] == "Never"
+    assert pod["serviceAccountName"] == "test-quay"
+    assert pod["nodeSelector"] == {"part-of": "quay"}
+    assert pod["volumes"] == [{"name": "configvolume", "secret": {"secretName": "quay-config"}}]
+    assert container["image"] == "quay.io/projectquay/quay:3.15.0"
+    assert container["imagePullPolicy"] == "IfNotPresent"
+    assert container["command"] == [
+        "/quay-registry/quay-entrypoint.sh",
+        "migrate",
+        "head",
+    ]
+    assert container["volumeMounts"] == [{"name": "configvolume", "mountPath": "/conf/stack"}]
+    assert container["resources"] == {
+        "limits": {"memory": "2Gi"},
+        "requests": {"cpu": "750m", "memory": "1Gi"},
+    }
+    environment = {item["name"]: item for item in container["env"]}
+    assert environment["QE_K8S_NAMESPACE"]["valueFrom"]["fieldRef"]["fieldPath"] == (
+        "metadata.namespace"
+    )
+    assert environment["QE_K8S_CONFIG_SECRET"]["value"] == "quay-config"
+    assert environment["DEBUGLOG"]["value"] == "false"
+
+
+def test_optional_ingress_targets_app_service():
+    ingress = by_kind(render("ingress.yaml"), "Ingress")[0]
+    backend = ingress["spec"]["rules"][0]["http"]["paths"][0]["backend"]["service"]
+    assert ingress["metadata"]["annotations"] == {"example.com/provider-setting": "enabled"}
+    assert ingress["spec"]["ingressClassName"] == "nginx"
+    assert ingress["spec"]["rules"] == [
+        {
+            "host": "quay.example.com",
+            "http": {
+                "paths": [
+                    {
+                        "path": "/",
+                        "pathType": "Prefix",
+                        "backend": {
+                            "service": {
+                                "name": "test-quay-https",
+                                "port": {"number": 443},
+                            }
+                        },
+                    },
+                    {
+                        "path": "/v2",
+                        "pathType": "Prefix",
+                        "backend": {
+                            "service": {
+                                "name": "test-quay-https",
+                                "port": {"number": 443},
+                            }
+                        },
+                    },
+                ]
+            },
+        }
+    ]
+    assert ingress["spec"]["tls"] == [
+        {"hosts": ["quay.example.com"], "secretName": "quay-example-tls"}
+    ]
+    assert backend["name"] == "test-quay-https"
+    assert backend["port"]["number"] == 443
+
+
+@pytest.mark.parametrize(
+    ("setting", "schema_path"),
+    [
+        ("app.enabled=false", "/app/enabled"),
+        ("app.services.https.enabled=false", "/app/services/https/enabled"),
+    ],
+)
+def test_ingress_requires_app_https_service(setting, schema_path):
+    result = subprocess.run(
+        [
+            "helm",
+            "lint",
+            str(CHART),
+            "-f",
+            str(CHART / "test/values/ingress.yaml"),
+            "--set",
+            setting,
+        ],
+        capture_output=True,
+        text=True,
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == 1
+    assert schema_path in output
 
 
 def test_shared_rbac_uses_existing_service_account():

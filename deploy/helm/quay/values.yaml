@@ -137,6 +137,28 @@ workers:
 
 migration:
   enabled: false
+  targetRevision: head
+  activeDeadlineSeconds: 3600
+  backoffLimit: 0
+  annotations: {}
+  resources:
+    limits:
+      memory: 1024Mi
+    requests:
+      cpu: 500m
+      memory: 1024Mi
+  environment:
+    DEBUGLOG: "false"
+  nodeSelector:
+    part-of: quay
 
 ingress:
   enabled: false
+  className: ""
+  annotations: {}
+  host: ""
+  paths:
+    - /
+  tls:
+    enabled: false
+    secretName: ""
