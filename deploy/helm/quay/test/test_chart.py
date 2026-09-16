@@ -453,6 +453,50 @@ def test_optional_ingress_targets_app_service():
     assert backend["port"]["number"] == 443
 
 
+def test_ingress_quotes_scalar_like_string_values():
+    ingress = by_kind(
+        render(
+            "ingress.yaml",
+            "--set-string",
+            "ingress.className=true",
+            "--set-string",
+            "ingress.tls.secretName=123",
+        ),
+        "Ingress",
+    )[0]
+    assert ingress["spec"]["ingressClassName"] == "true"
+    assert ingress["spec"]["tls"][0]["secretName"] == "123"
+
+
+@pytest.mark.parametrize(
+    ("values_file", "setting", "unknown_property"),
+    [
+        ("migration.yaml", "migration.targetRevisoin=head", "targetRevisoin"),
+        ("migration.yaml", "migration.resources.requestz.cpu=1", "requestz"),
+        ("migration.yaml", "migration.environment.DEBUGLOGG=false", "DEBUGLOGG"),
+        ("ingress.yaml", "ingress.classNmae=nginx", "classNmae"),
+        ("ingress.yaml", "ingress.tls.secretNmae=tls", "secretNmae"),
+    ],
+)
+def test_task4_closed_objects_reject_unknown_properties(values_file, setting, unknown_property):
+    result = subprocess.run(
+        [
+            "helm",
+            "lint",
+            str(CHART),
+            "-f",
+            str(CHART / "test/values" / values_file),
+            "--set",
+            setting,
+        ],
+        capture_output=True,
+        text=True,
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == 1
+    assert f"additional properties '{unknown_property}' not allowed" in output
+
+
 @pytest.mark.parametrize(
     ("setting", "schema_path"),
     [
