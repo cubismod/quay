@@ -4,12 +4,16 @@ image:
   digest: ""
   pullPolicy: IfNotPresent
 
+imagePullSecrets: []
+
 config:
   existingSecret: ""
 
 serviceAccount:
   create: true
   name: ""
+  annotations: {}
+  imagePullSecrets: []
 
 app:
   enabled: false
@@ -19,6 +23,11 @@ app:
   progressDeadlineSeconds: 600
   revisionHistoryLimit: 10
   terminationGracePeriodSeconds: 60
+  podAnnotations: {}
+  podLabels: {}
+  podSecurityContext: {}
+  tolerations: []
+  topologySpreadConstraints: []
   strategy:
     rollingUpdate:
       maxUnavailable: 0
@@ -84,6 +93,11 @@ workers:
   progressDeadlineSeconds: 600
   revisionHistoryLimit: 10
   terminationGracePeriodSeconds: 60
+  podAnnotations: {}
+  podLabels: {}
+  podSecurityContext: {}
+  tolerations: []
+  topologySpreadConstraints: []
   strategy:
     rollingUpdate:
       maxUnavailable: 0
@@ -137,6 +151,7 @@ workers:
 
 migration:
   enabled: false
+  image: ""
   targetRevision: head
   activeDeadlineSeconds: 3600
   backoffLimit: 0

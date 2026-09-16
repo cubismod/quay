@@ -44,13 +44,13 @@ The application exposes independently configurable HTTPS and metrics Services. B
 
 ### Migration Only
 
-Set `migration.enabled: true` while leaving `app.enabled` and `workers.enabled` false. The resulting Job runs:
+Set `migration.enabled: true` while leaving `app.enabled` and `workers.enabled` false. The values schema rejects releases that combine migration and runtime workloads. The resulting Job runs:
 
 ```text
 /quay-registry/quay-entrypoint.sh migrate <migration.targetRevision>
 ```
 
-The migration Job uses the same image, configuration Secret, ServiceAccount, and release-scoped RBAC as runtime workloads. Argo CD hook or sync-wave annotations are not supplied by default; inject orchestration annotations through the consuming GitOps configuration when needed.
+The migration Job uses the common image by default. Set `migration.image` to a complete image reference when the migration must run a different image. It shares the configuration Secret, ServiceAccount, image pull secrets, and release-scoped RBAC with runtime workloads. Argo CD hook or sync-wave annotations are not supplied by default; inject orchestration annotations through the consuming GitOps configuration when needed.
 
 ### Optional Ingress
 
@@ -67,17 +67,22 @@ image:
   digest: sha256:0123456789abcdef
 ```
 
+Set top-level `imagePullSecrets` to add registry credentials to every rendered pod. `serviceAccount.imagePullSecrets` independently configures pull secrets on a chart-created ServiceAccount.
+
 ## Configuration Reloading
 
-This chart neither installs Reloader nor adds Reloader annotations. A deployment system such as `quay-gitops` can inject the annotation into each rendered Deployment when automatic restarts after Secret changes are required:
+This chart does not install Reloader. Configure the existing stack Secret directly through the app and worker annotation values when automatic restarts after Secret changes are required:
 
 ```yaml
-metadata:
-  annotations:
-    reloader.stakater.com/auto: "true"
+app:
+  podAnnotations:
+    secret.reloader.stakater.com/reload: quay-config
+workers:
+  podAnnotations:
+    secret.reloader.stakater.com/reload: quay-config
 ```
 
-Inject the annotation on the Deployment metadata, not the pod template. The Reloader controller and its permissions remain the responsibility of the target environment.
+The chart places `podAnnotations` on both the Deployment and its pod template. The Deployment annotation activates Reloader, while the pod annotation remains available to pod-level integrations. The Reloader controller and its permissions remain the responsibility of the target environment.
 
 ## Values
 
@@ -91,9 +96,12 @@ The JSON schema in `values.schema.json` validates the values contract. Resource 
 | `image.tag` | `latest` | Image tag used when `image.digest` is empty. |
 | `image.digest` | `""` | Image digest; takes precedence over the tag. |
 | `image.pullPolicy` | `IfNotPresent` | Container image pull policy. |
+| `imagePullSecrets` | `[]` | Local object references added to every pod. |
 | `config.existingSecret` | `""` | Existing Quay configuration Secret; required when a workload is enabled. |
 | `serviceAccount.create` | `true` | Create a release-scoped ServiceAccount. |
 | `serviceAccount.name` | `""` | Existing ServiceAccount name; required when creation is disabled. |
+| `serviceAccount.annotations` | `{}` | Annotations for a chart-created ServiceAccount. |
+| `serviceAccount.imagePullSecrets` | `[]` | Local object references added to a chart-created ServiceAccount. |
 
 ### Application Values
 
@@ -106,6 +114,11 @@ The JSON schema in `values.schema.json` validates the values contract. Resource 
 | `app.progressDeadlineSeconds` | `600` | Deployment progress deadline. |
 | `app.revisionHistoryLimit` | `10` | Retained ReplicaSets. |
 | `app.terminationGracePeriodSeconds` | `60` | Pod termination grace period. |
+| `app.podAnnotations` | `{}` | Annotations added to the Deployment and pod template. |
+| `app.podLabels` | `{}` | Extra pod labels; stable `app.kubernetes.io` selector keys are rejected. |
+| `app.podSecurityContext` | `{}` | Kubernetes pod security context. |
+| `app.tolerations` | `[]` | Kubernetes pod tolerations. |
+| `app.topologySpreadConstraints` | `[]` | Kubernetes topology spread constraints. |
 | `app.strategy.rollingUpdate.maxUnavailable` | `0` | Maximum unavailable pods during rollout. |
 | `app.strategy.rollingUpdate.maxSurge` | `1` | Maximum surge pods during rollout. |
 | `app.resources` | See `values.yaml` | Container resource requests and limits. |
@@ -133,6 +146,11 @@ The JSON schema in `values.schema.json` validates the values contract. Resource 
 | `workers.progressDeadlineSeconds` | `600` | Deployment progress deadline. |
 | `workers.revisionHistoryLimit` | `10` | Retained ReplicaSets. |
 | `workers.terminationGracePeriodSeconds` | `60` | Pod termination grace period. |
+| `workers.podAnnotations` | `{}` | Annotations added to the Deployment and pod template. |
+| `workers.podLabels` | `{}` | Extra pod labels; stable `app.kubernetes.io` selector keys are rejected. |
+| `workers.podSecurityContext` | `{}` | Kubernetes pod security context. |
+| `workers.tolerations` | `[]` | Kubernetes pod tolerations. |
+| `workers.topologySpreadConstraints` | `[]` | Kubernetes topology spread constraints. |
 | `workers.strategy.rollingUpdate.maxUnavailable` | `0` | Maximum unavailable pods during rollout. |
 | `workers.strategy.rollingUpdate.maxSurge` | `1` | Maximum surge pods during rollout. |
 | `workers.resources` | See `values.yaml` | Container resource requests and limits. |
@@ -154,6 +172,7 @@ The JSON schema in `values.schema.json` validates the values contract. Resource 
 | Value | Default | Description |
 | --- | --- | --- |
 | `migration.enabled` | `false` | Render the migration Job. |
+| `migration.image` | `""` | Optional complete image reference; empty uses the common image. |
 | `migration.targetRevision` | `head` | Alembic migration target. |
 | `migration.activeDeadlineSeconds` | `3600` | Job execution deadline. |
 | `migration.backoffLimit` | `0` | Job retry limit. |

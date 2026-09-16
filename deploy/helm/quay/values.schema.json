@@ -2,10 +2,61 @@
   "$schema": "https://json-schema.org/draft-07/schema",
   "type": "object",
   "additionalProperties": false,
-  "required": ["image", "config", "serviceAccount", "app", "workers", "migration", "ingress"],
+  "required": [
+    "image",
+    "imagePullSecrets",
+    "config",
+    "serviceAccount",
+    "app",
+    "workers",
+    "migration",
+    "ingress"
+  ],
+  "definitions": {
+    "stringMap": {
+      "type": "object",
+      "additionalProperties": {"type": "string"}
+    },
+    "podLabels": {
+      "type": "object",
+      "propertyNames": {
+        "not": {
+          "enum": [
+            "app.kubernetes.io/name",
+            "app.kubernetes.io/instance",
+            "app.kubernetes.io/component"
+          ]
+        }
+      },
+      "additionalProperties": {"type": "string"}
+    },
+    "imagePullSecrets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "openObject": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "openObjectArray": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    }
+  },
   "properties": {
     "image": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "repository": {"type": "string"},
         "tag": {"type": "string"},
@@ -13,21 +64,27 @@
         "pullPolicy": {"type": "string"}
       }
     },
+    "imagePullSecrets": {"$ref": "#/definitions/imagePullSecrets"},
     "config": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "existingSecret": {"type": "string"}
       }
     },
     "serviceAccount": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "create": {"type": "boolean"},
-        "name": {"type": "string"}
+        "name": {"type": "string"},
+        "annotations": {"$ref": "#/definitions/stringMap"},
+        "imagePullSecrets": {"$ref": "#/definitions/imagePullSecrets"}
       }
     },
     "app": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "enabled": {"type": "boolean"},
         "replicaCount": {"type": "integer", "minimum": 0},
@@ -36,11 +93,18 @@
         "progressDeadlineSeconds": {"type": "integer", "minimum": 0},
         "revisionHistoryLimit": {"type": "integer", "minimum": 0},
         "terminationGracePeriodSeconds": {"type": "integer", "minimum": 0},
+        "podAnnotations": {"$ref": "#/definitions/stringMap"},
+        "podLabels": {"$ref": "#/definitions/podLabels"},
+        "podSecurityContext": {"$ref": "#/definitions/openObject"},
+        "tolerations": {"$ref": "#/definitions/openObjectArray"},
+        "topologySpreadConstraints": {"$ref": "#/definitions/openObjectArray"},
         "strategy": {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
             "rollingUpdate": {
               "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "maxUnavailable": {"type": "integer", "minimum": 0},
                 "maxSurge": {"type": "integer", "minimum": 0}
@@ -50,6 +114,7 @@
         },
         "resources": {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
             "limits": {
               "type": "object",
@@ -63,6 +128,7 @@
         },
         "startupProbe": {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
             "failureThreshold": {"type": "integer", "minimum": 1},
             "timeoutSeconds": {"type": "integer", "minimum": 1},
@@ -71,6 +137,7 @@
         },
         "readinessProbe": {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
             "failureThreshold": {"type": "integer", "minimum": 1},
             "successThreshold": {"type": "integer", "minimum": 1},
@@ -81,6 +148,7 @@
         },
         "livenessProbe": {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
             "failureThreshold": {"type": "integer", "minimum": 1},
             "periodSeconds": {"type": "integer", "minimum": 1}
@@ -88,6 +156,7 @@
         },
         "environment": {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
             "DEBUGLOG": {"type": "string"},
             "IGNORE_VALIDATION": {"type": "string"},
@@ -100,13 +169,15 @@
             "QUAY_OVERRIDE_SERVICES": {"type": "string"}
           }
         },
-        "nodeSelector": {"type": "object"},
-        "affinity": {"type": "object"},
+        "nodeSelector": {"$ref": "#/definitions/openObject"},
+        "affinity": {"$ref": "#/definitions/openObject"},
         "services": {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
             "https": {
               "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "enabled": {"type": "boolean"},
                 "port": {"type": "integer", "minimum": 1, "maximum": 65535},
@@ -115,6 +186,7 @@
             },
             "metrics": {
               "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "enabled": {"type": "boolean"},
                 "port": {"type": "integer", "minimum": 1, "maximum": 65535},
@@ -127,6 +199,7 @@
     },
     "workers": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "enabled": {"type": "boolean"},
         "replicaCount": {"type": "integer", "minimum": 0},
@@ -135,11 +208,18 @@
         "progressDeadlineSeconds": {"type": "integer", "minimum": 0},
         "revisionHistoryLimit": {"type": "integer", "minimum": 0},
         "terminationGracePeriodSeconds": {"type": "integer", "minimum": 0},
+        "podAnnotations": {"$ref": "#/definitions/stringMap"},
+        "podLabels": {"$ref": "#/definitions/podLabels"},
+        "podSecurityContext": {"$ref": "#/definitions/openObject"},
+        "tolerations": {"$ref": "#/definitions/openObjectArray"},
+        "topologySpreadConstraints": {"$ref": "#/definitions/openObjectArray"},
         "strategy": {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
             "rollingUpdate": {
               "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "maxUnavailable": {"type": "integer", "minimum": 0},
                 "maxSurge": {"type": "integer", "minimum": 0}
@@ -149,6 +229,7 @@
         },
         "resources": {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
             "limits": {
               "type": "object",
@@ -162,6 +243,7 @@
         },
         "startupProbe": {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
             "failureThreshold": {"type": "integer", "minimum": 1},
             "periodSeconds": {"type": "integer", "minimum": 1}
@@ -169,6 +251,7 @@
         },
         "readinessProbe": {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
             "failureThreshold": {"type": "integer", "minimum": 1},
             "successThreshold": {"type": "integer", "minimum": 1},
@@ -177,6 +260,7 @@
         },
         "livenessProbe": {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
             "failureThreshold": {"type": "integer", "minimum": 1},
             "periodSeconds": {"type": "integer", "minimum": 1}
@@ -184,6 +268,7 @@
         },
         "environment": {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
             "DEBUGLOG": {"type": "string"},
             "IGNORE_VALIDATION": {"type": "string"},
@@ -193,13 +278,15 @@
             "QUAY_OVERRIDE_SERVICES": {"type": "string"}
           }
         },
-        "nodeSelector": {"type": "object"},
-        "affinity": {"type": "object"},
+        "nodeSelector": {"$ref": "#/definitions/openObject"},
+        "affinity": {"$ref": "#/definitions/openObject"},
         "services": {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
             "grpc": {
               "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "enabled": {"type": "boolean"},
                 "port": {"type": "integer", "minimum": 1, "maximum": 65535},
@@ -208,6 +295,7 @@
             },
             "metrics": {
               "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "enabled": {"type": "boolean"},
                 "port": {"type": "integer", "minimum": 1, "maximum": 65535},
@@ -223,6 +311,7 @@
       "additionalProperties": false,
       "properties": {
         "enabled": {"type": "boolean"},
+        "image": {"type": "string"},
         "targetRevision": {"type": "string", "minLength": 1},
         "activeDeadlineSeconds": {"type": "integer", "minimum": 1},
         "backoffLimit": {"type": "integer", "minimum": 0},
@@ -251,7 +340,7 @@
             "DEBUGLOG": {"type": "string"}
           }
         },
-        "nodeSelector": {"type": "object"}
+        "nodeSelector": {"$ref": "#/definitions/openObject"}
       }
     },
     "ingress": {
@@ -396,6 +485,27 @@
                 "properties": {"secretName": {"minLength": 1}}
               }
             }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "migration": {
+            "properties": {"enabled": {"const": true}},
+            "required": ["enabled"]
+          }
+        },
+        "required": ["migration"]
+      },
+      "then": {
+        "properties": {
+          "app": {
+            "properties": {"enabled": {"const": false}}
+          },
+          "workers": {
+            "properties": {"enabled": {"const": false}}
           }
         }
       }

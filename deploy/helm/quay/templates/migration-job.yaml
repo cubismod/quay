@@ -20,16 +20,20 @@ spec:
         app.kubernetes.io/component: db-migration
     spec:
       restartPolicy: Never
-      serviceAccountName: {{ default (include "quay.fullname" .) .Values.serviceAccount.name }}
+      serviceAccountName: {{ default (include "quay.fullname" .) .Values.serviceAccount.name | quote }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       volumes:
         - name: configvolume
           secret:
-            secretName: {{ .Values.config.existingSecret }}
+            secretName: {{ .Values.config.existingSecret | quote }}
       nodeSelector:
         {{- toYaml .Values.migration.nodeSelector | nindent 8 }}
       containers:
         - name: quay-migration
-          image: {{ include "quay.image" . | quote }}
+          image: {{ default (include "quay.image" .) .Values.migration.image | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command:
             - /quay-registry/quay-entrypoint.sh

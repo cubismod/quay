@@ -6,6 +6,10 @@ metadata:
   labels:
     {{- include "quay.labels" . | nindent 4 }}
     app.kubernetes.io/component: bkg-workers
+  {{- with .Values.workers.podAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   replicas: {{ .Values.workers.replicaCount }}
   minReadySeconds: {{ .Values.workers.minReadySeconds }}
@@ -22,20 +26,43 @@ spec:
       app.kubernetes.io/component: bkg-workers
   template:
     metadata:
+      {{- with .Values.workers.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       labels:
+        {{- with .Values.workers.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
         {{- include "quay.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: bkg-workers
     spec:
       terminationGracePeriodSeconds: {{ .Values.workers.terminationGracePeriodSeconds }}
-      serviceAccountName: {{ default (include "quay.fullname" .) .Values.serviceAccount.name }}
+      serviceAccountName: {{ default (include "quay.fullname" .) .Values.serviceAccount.name | quote }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.workers.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       volumes:
         - name: configvolume
           secret:
-            secretName: {{ .Values.config.existingSecret }}
+            secretName: {{ .Values.config.existingSecret | quote }}
       nodeSelector:
         {{- toYaml .Values.workers.nodeSelector | nindent 8 }}
       affinity:
         {{- toYaml .Values.workers.affinity | nindent 8 }}
+      {{- with .Values.workers.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.workers.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: quay-workers
           image: {{ include "quay.image" . | quote }}

@@ -6,6 +6,10 @@ metadata:
   labels:
     {{- include "quay.labels" . | nindent 4 }}
     app.kubernetes.io/component: app
+  {{- with .Values.app.podAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   replicas: {{ .Values.app.replicaCount }}
   minReadySeconds: {{ .Values.app.minReadySeconds }}
@@ -22,20 +26,43 @@ spec:
       app.kubernetes.io/component: app
   template:
     metadata:
+      {{- with .Values.app.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       labels:
+        {{- with .Values.app.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
         {{- include "quay.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: app
     spec:
       terminationGracePeriodSeconds: {{ .Values.app.terminationGracePeriodSeconds }}
-      serviceAccountName: {{ default (include "quay.fullname" .) .Values.serviceAccount.name }}
+      serviceAccountName: {{ default (include "quay.fullname" .) .Values.serviceAccount.name | quote }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.app.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       volumes:
         - name: configvolume
           secret:
-            secretName: {{ .Values.config.existingSecret }}
+            secretName: {{ .Values.config.existingSecret | quote }}
       nodeSelector:
         {{- toYaml .Values.app.nodeSelector | nindent 8 }}
       affinity:
         {{- toYaml .Values.app.affinity | nindent 8 }}
+      {{- with .Values.app.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.app.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: quay-app
           image: {{ include "quay.image" . | quote }}

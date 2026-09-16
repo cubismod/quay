@@ -158,6 +158,56 @@ def test_runtime_renders_app_and_shared_resources():
     }
 
 
+def test_runtime_renders_service_account_configuration():
+    resources = render("runtime.yaml")
+    service_account = by_kind(resources, "ServiceAccount")[0]
+    assert service_account["metadata"]["annotations"] == {"example.com/workload-identity": "quay"}
+    assert service_account["imagePullSecrets"] == [{"name": "true"}]
+
+
+@pytest.mark.parametrize(
+    ("component", "workload_label", "toleration_value"),
+    [("app", "app", "app"), ("bkg-workers", "workers", "workers")],
+)
+def test_runtime_renders_pod_configuration(component, workload_label, toleration_value):
+    deployment = next(
+        item
+        for item in by_kind(render("runtime.yaml"), "Deployment")
+        if item["metadata"]["labels"]["app.kubernetes.io/component"] == component
+    )
+    pod_template = deployment["spec"]["template"]
+    pod = pod_template["spec"]
+    assert deployment["metadata"]["annotations"] == {
+        "secret.reloader.stakater.com/reload": "quay-config"
+    }
+    assert pod_template["metadata"]["annotations"] == {
+        "secret.reloader.stakater.com/reload": "quay-config"
+    }
+    assert pod_template["metadata"]["labels"]["example.com/workload"] == workload_label
+    assert pod_template["metadata"]["labels"]["app.kubernetes.io/component"] == component
+    assert pod["imagePullSecrets"] == [{"name": "123"}]
+    assert pod["securityContext"] == {
+        "runAsNonRoot": True,
+        "seccompProfile": {"type": "RuntimeDefault"},
+    }
+    assert pod["tolerations"] == [
+        {
+            "key": "dedicated",
+            "operator": "Equal",
+            "value": toleration_value,
+            "effect": "NoSchedule",
+        }
+    ]
+    assert pod["topologySpreadConstraints"] == [
+        {
+            "maxSkew": 1,
+            "topologyKey": "topology.kubernetes.io/zone",
+            "whenUnsatisfiable": "ScheduleAnyway",
+            "labelSelector": {"matchLabels": {"app.kubernetes.io/component": component}},
+        }
+    ]
+
+
 def test_app_preserves_runtime_behavior():
     resources = render("runtime.yaml")
     deployment = by_kind(resources, "Deployment")[0]
@@ -420,7 +470,7 @@ def test_service_selectors_match_workload_pod_labels():
     assert services
     for service in services:
         component = service["metadata"]["labels"]["app.kubernetes.io/component"]
-        assert service["spec"]["selector"] == pod_labels_by_component[component]
+        assert service["spec"]["selector"].items() <= pod_labels_by_component[component].items()
 
 
 @pytest.mark.parametrize("section", ["app", "workers"])
@@ -483,6 +533,40 @@ def test_migration_only_mode():
     )
     assert environment["QE_K8S_CONFIG_SECRET"]["value"] == "quay-config"
     assert environment["DEBUGLOG"]["value"] == "false"
+
+
+def test_migration_image_override_replaces_common_image():
+    job = by_kind(
+        render(
+            "migration.yaml",
+            "--set-string",
+            "migration.image=registry.example.com/quay@sha256:0123456789abcdef",
+        ),
+        "Job",
+    )[0]
+    assert job["spec"]["template"]["spec"]["containers"][0]["image"] == (
+        "registry.example.com/quay@sha256:0123456789abcdef"
+    )
+
+
+@pytest.mark.parametrize("runtime_section", ["app", "workers"])
+def test_migration_mode_rejects_runtime_workloads(runtime_section):
+    result = subprocess.run(
+        [
+            "helm",
+            "lint",
+            str(CHART),
+            "-f",
+            str(CHART / "test/values/migration.yaml"),
+            "--set",
+            f"{runtime_section}.enabled=true",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == 1
+    assert f"/{runtime_section}/enabled" in output
 
 
 def test_optional_ingress_targets_app_service():
@@ -598,6 +682,69 @@ def test_task4_closed_objects_reject_unknown_properties(values_file, setting, un
 
 
 @pytest.mark.parametrize(
+    ("setting", "unknown_property"),
+    [
+        ("image.repositroy=example.com/quay", "repositroy"),
+        ("config.existingSecrett=quay-config", "existingSecrett"),
+        ("serviceAccount.creat=true", "creat"),
+        ("app.replicaCout=2", "replicaCout"),
+        ("app.strategy.rollingUpdate.maxSurgee=1", "maxSurgee"),
+        ("app.resources.requestz.cpu=1", "requestz"),
+        ("app.startupProbe.periodSecondz=30", "periodSecondz"),
+        ("app.environment.DEBUGLOGG=false", "DEBUGLOGG"),
+        ("app.services.https.targetPorrt=8443", "targetPorrt"),
+        ("workers.replicaCout=2", "replicaCout"),
+        ("workers.strategy.rollingUpdate.maxSurgee=1", "maxSurgee"),
+        ("workers.resources.requestz.cpu=1", "requestz"),
+        ("workers.readinessProbe.periodSecondz=30", "periodSecondz"),
+        ("workers.environment.DEBUGLOGG=false", "DEBUGLOGG"),
+        ("workers.services.grpc.targetPorrt=55443", "targetPorrt"),
+    ],
+)
+def test_core_closed_objects_reject_unknown_properties(setting, unknown_property):
+    result = subprocess.run(
+        [
+            "helm",
+            "lint",
+            str(CHART),
+            "--set",
+            setting,
+        ],
+        capture_output=True,
+        text=True,
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == 1
+    assert f"additional properties '{unknown_property}' not allowed" in output
+
+
+@pytest.mark.parametrize("section", ["app", "workers"])
+@pytest.mark.parametrize(
+    "reserved_label",
+    [
+        "app\\.kubernetes\\.io/name",
+        "app\\.kubernetes\\.io/instance",
+        "app\\.kubernetes\\.io/component",
+    ],
+)
+def test_pod_labels_reject_reserved_selector_keys(section, reserved_label):
+    result = subprocess.run(
+        [
+            "helm",
+            "lint",
+            str(CHART),
+            "--set-string",
+            f"{section}.podLabels.{reserved_label}=override",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == 1
+    assert f"invalid propertyName '{reserved_label.replace('\\.', '.')}'" in output
+
+
+@pytest.mark.parametrize(
     ("setting", "schema_path"),
     [
         ("app.enabled=false", "/app/enabled"),
@@ -650,6 +797,27 @@ def test_shared_rbac_uses_existing_service_account():
             "verbs": ["get", "list", "patch", "update", "watch"],
         },
     ]
+
+
+@pytest.mark.parametrize("values_file", ["runtime.yaml", "migration.yaml"])
+def test_user_controlled_names_remain_strings(values_file):
+    resources = render(
+        values_file,
+        "--set-string",
+        "serviceAccount.name=true",
+        "--set-string",
+        "config.existingSecret=123",
+    )
+    service_account = by_kind(resources, "ServiceAccount")[0]
+    role_binding = by_kind(resources, "RoleBinding")[0]
+    workloads = [resource for resource in resources if resource["kind"] in {"Deployment", "Job"}]
+    assert service_account["metadata"]["name"] == "true"
+    assert role_binding["subjects"][0]["name"] == "true"
+    assert workloads
+    for workload in workloads:
+        pod = workload["spec"]["template"]["spec"]
+        assert pod["serviceAccountName"] == "true"
+        assert pod["volumes"][0]["secret"]["secretName"] == "123"
 
 
 @pytest.mark.parametrize("section", ["app", "workers"])

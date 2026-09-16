@@ -11,5 +11,5 @@ roleRef:
   name: {{ include "quay.fullname" . }}
 subjects:
   - kind: ServiceAccount
-    name: {{ default (include "quay.fullname" .) .Values.serviceAccount.name }}
+    name: {{ default (include "quay.fullname" .) .Values.serviceAccount.name | quote }}
 {{- end }}
