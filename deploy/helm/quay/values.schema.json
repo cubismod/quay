@@ -130,7 +130,92 @@
       "properties": {
         "enabled": {"type": "boolean"},
         "replicaCount": {"type": "integer", "minimum": 0},
-        "entrypoint": {"type": "string"}
+        "entrypoint": {"type": "string"},
+        "minReadySeconds": {"type": "integer", "minimum": 0},
+        "progressDeadlineSeconds": {"type": "integer", "minimum": 0},
+        "revisionHistoryLimit": {"type": "integer", "minimum": 0},
+        "terminationGracePeriodSeconds": {"type": "integer", "minimum": 0},
+        "strategy": {
+          "type": "object",
+          "properties": {
+            "rollingUpdate": {
+              "type": "object",
+              "properties": {
+                "maxUnavailable": {"type": "integer", "minimum": 0},
+                "maxSurge": {"type": "integer", "minimum": 0}
+              }
+            }
+          }
+        },
+        "resources": {
+          "type": "object",
+          "properties": {
+            "limits": {
+              "type": "object",
+              "additionalProperties": {"type": ["string", "number"]}
+            },
+            "requests": {
+              "type": "object",
+              "additionalProperties": {"type": ["string", "number"]}
+            }
+          }
+        },
+        "startupProbe": {
+          "type": "object",
+          "properties": {
+            "failureThreshold": {"type": "integer", "minimum": 1},
+            "periodSeconds": {"type": "integer", "minimum": 1}
+          }
+        },
+        "readinessProbe": {
+          "type": "object",
+          "properties": {
+            "failureThreshold": {"type": "integer", "minimum": 1},
+            "successThreshold": {"type": "integer", "minimum": 1},
+            "periodSeconds": {"type": "integer", "minimum": 1}
+          }
+        },
+        "livenessProbe": {
+          "type": "object",
+          "properties": {
+            "failureThreshold": {"type": "integer", "minimum": 1},
+            "periodSeconds": {"type": "integer", "minimum": 1}
+          }
+        },
+        "environment": {
+          "type": "object",
+          "properties": {
+            "DEBUGLOG": {"type": "string"},
+            "IGNORE_VALIDATION": {"type": "string"},
+            "QUAY_LOGGING": {"type": "string"},
+            "DB_CONNECTION_POOLING": {"type": "string"},
+            "QUAY_SERVICES": {"type": "string"},
+            "QUAY_OVERRIDE_SERVICES": {"type": "string"}
+          }
+        },
+        "nodeSelector": {"type": "object"},
+        "affinity": {"type": "object"},
+        "services": {
+          "type": "object",
+          "properties": {
+            "grpc": {
+              "type": "object",
+              "properties": {
+                "enabled": {"type": "boolean"},
+                "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+                "targetPort": {"type": "integer", "minimum": 1, "maximum": 65535}
+              }
+            },
+            "metrics": {
+              "type": "object",
+              "properties": {
+                "enabled": {"type": "boolean"},
+                "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+                "targetPort": {"type": "integer", "minimum": 1, "maximum": 65535}
+              }
+            }
+          }
+        }
       }
     },
     "migration": {

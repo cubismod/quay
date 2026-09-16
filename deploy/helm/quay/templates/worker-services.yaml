@@ -1,0 +1,39 @@
+{{- if and .Values.workers.enabled .Values.workers.services.grpc.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ printf "%s-workers-grpc" (include "quay.fullname" .) | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "quay.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bkg-workers
+spec:
+  type: ClusterIP
+  ports:
+    - name: grpc
+      protocol: TCP
+      port: {{ .Values.workers.services.grpc.port }}
+      targetPort: {{ .Values.workers.services.grpc.targetPort }}
+  selector:
+    {{- include "quay.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: bkg-workers
+{{- end }}
+{{- if and .Values.workers.enabled .Values.workers.services.metrics.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ printf "%s-workers-metrics" (include "quay.fullname" .) | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "quay.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bkg-workers
+spec:
+  type: ClusterIP
+  ports:
+    - name: metrics
+      protocol: TCP
+      port: {{ .Values.workers.services.metrics.port }}
+      targetPort: {{ .Values.workers.services.metrics.targetPort }}
+  selector:
+    {{- include "quay.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: bkg-workers
+{{- end }}

@@ -80,6 +80,60 @@ workers:
   enabled: false
   replicaCount: 1
   entrypoint: registry-nomigrate
+  minReadySeconds: 0
+  progressDeadlineSeconds: 600
+  revisionHistoryLimit: 10
+  terminationGracePeriodSeconds: 60
+  strategy:
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  resources:
+    limits:
+      memory: 4096Mi
+    requests:
+      cpu: "1"
+      memory: 4096Mi
+  startupProbe:
+    failureThreshold: 10
+    periodSeconds: 15
+  readinessProbe:
+    failureThreshold: 3
+    successThreshold: 1
+    periodSeconds: 15
+  livenessProbe:
+    failureThreshold: 5
+    periodSeconds: 15
+  environment:
+    DEBUGLOG: "false"
+    IGNORE_VALIDATION: "false"
+    QUAY_LOGGING: stdout
+    DB_CONNECTION_POOLING: "true"
+    QUAY_SERVICES: ""
+    QUAY_OVERRIDE_SERVICES: "gunicorn-registry=false,gunicorn-web=false,gunicorn-secscan=false"
+  nodeSelector:
+    part-of: quay
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 1
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app.kubernetes.io/component
+                  operator: In
+                  values:
+                    - bkg-workers
+            topologyKey: kubernetes.io/hostname
+  services:
+    grpc:
+      enabled: true
+      port: 443
+      targetPort: 55443
+    metrics:
+      enabled: true
+      port: 9091
+      targetPort: 9091
 
 migration:
   enabled: false

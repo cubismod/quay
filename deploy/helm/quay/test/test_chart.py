@@ -205,7 +205,11 @@ def test_app_preserves_runtime_behavior():
 
 def test_app_services_have_independent_flags_and_app_selectors():
     resources = render("runtime.yaml", "--set", "app.services.metrics.enabled=false")
-    services = by_kind(resources, "Service")
+    services = [
+        service
+        for service in by_kind(resources, "Service")
+        if service["metadata"]["labels"]["app.kubernetes.io/component"] == "app"
+    ]
     assert [service["metadata"]["name"] for service in services] == ["test-quay-https"]
     assert services[0]["spec"]["ports"] == [
         {"name": "https", "protocol": "TCP", "port": 443, "targetPort": 8443}
@@ -213,12 +217,155 @@ def test_app_services_have_independent_flags_and_app_selectors():
     assert services[0]["spec"]["selector"]["app.kubernetes.io/component"] == "app"
 
     resources = render("runtime.yaml", "--set", "app.services.https.enabled=false")
-    services = by_kind(resources, "Service")
+    services = [
+        service
+        for service in by_kind(resources, "Service")
+        if service["metadata"]["labels"]["app.kubernetes.io/component"] == "app"
+    ]
     assert [service["metadata"]["name"] for service in services] == ["test-quay-metrics"]
     assert services[0]["spec"]["ports"] == [
         {"name": "metrics", "protocol": "TCP", "port": 9091, "targetPort": 9091}
     ]
     assert services[0]["spec"]["selector"]["app.kubernetes.io/component"] == "app"
+
+
+def test_runtime_renders_separate_workers():
+    resources = render("runtime.yaml")
+    worker = next(
+        item
+        for item in by_kind(resources, "Deployment")
+        if item["metadata"]["name"] == "test-quay-workers"
+    )
+    container = worker["spec"]["template"]["spec"]["containers"][0]
+    assert container["command"] == [
+        "/quay-registry/quay-entrypoint.sh",
+        "registry-nomigrate",
+    ]
+    assert any(env["name"] == "QUAY_OVERRIDE_SERVICES" for env in container["env"])
+    assert (
+        worker["spec"]["selector"]["matchLabels"]
+        != next(
+            item
+            for item in by_kind(resources, "Deployment")
+            if item["metadata"]["name"] == "test-quay-app"
+        )["spec"]["selector"]["matchLabels"]
+    )
+
+
+def test_workers_preserve_runtime_behavior():
+    resources = render("runtime.yaml")
+    deployment = next(
+        item
+        for item in by_kind(resources, "Deployment")
+        if item["metadata"]["name"] == "test-quay-workers"
+    )
+    pod = deployment["spec"]["template"]["spec"]
+    container = pod["containers"][0]
+
+    assert deployment["spec"]["replicas"] == 1
+    assert deployment["spec"]["minReadySeconds"] == 0
+    assert deployment["spec"]["progressDeadlineSeconds"] == 600
+    assert deployment["spec"]["revisionHistoryLimit"] == 10
+    assert deployment["spec"]["strategy"] == {
+        "type": "RollingUpdate",
+        "rollingUpdate": {"maxUnavailable": 0, "maxSurge": 1},
+    }
+    assert deployment["spec"]["selector"] == {
+        "matchLabels": {
+            "app.kubernetes.io/name": "quay",
+            "app.kubernetes.io/instance": "test",
+            "app.kubernetes.io/component": "bkg-workers",
+        }
+    }
+    assert pod["serviceAccountName"] == "test-quay"
+    assert pod["terminationGracePeriodSeconds"] == 60
+    assert pod["nodeSelector"] == {"part-of": "quay"}
+    assert pod["affinity"]["podAntiAffinity"]["preferredDuringSchedulingIgnoredDuringExecution"][0][
+        "podAffinityTerm"
+    ]["labelSelector"]["matchExpressions"][0] == {
+        "key": "app.kubernetes.io/component",
+        "operator": "In",
+        "values": ["bkg-workers"],
+    }
+    assert pod["volumes"] == [{"name": "configvolume", "secret": {"secretName": "quay-config"}}]
+    assert container["image"] == "quay.io/projectquay/quay:3.15.0"
+    assert container["imagePullPolicy"] == "IfNotPresent"
+    assert container["ports"] == [
+        {"name": "grpc", "containerPort": 55443},
+        {"name": "metrics", "containerPort": 9091},
+    ]
+    assert container["volumeMounts"] == [{"name": "configvolume", "mountPath": "/conf/stack"}]
+    assert container["startupProbe"] == {
+        "failureThreshold": 10,
+        "periodSeconds": 15,
+        "tcpSocket": {"port": 50051},
+    }
+    assert container["readinessProbe"] == {
+        "failureThreshold": 3,
+        "successThreshold": 1,
+        "periodSeconds": 15,
+        "tcpSocket": {"port": 50051},
+    }
+    assert container["livenessProbe"] == {
+        "failureThreshold": 5,
+        "periodSeconds": 15,
+        "tcpSocket": {"port": 50051},
+    }
+    assert container["resources"] == {
+        "limits": {"memory": "4096Mi"},
+        "requests": {"cpu": "1", "memory": "4096Mi"},
+    }
+    environment = {item["name"]: item for item in container["env"]}
+    assert environment["QE_K8S_NAMESPACE"]["valueFrom"]["fieldRef"]["fieldPath"] == (
+        "metadata.namespace"
+    )
+    assert environment["QE_K8S_CONFIG_SECRET"]["value"] == "quay-config"
+    assert {
+        name: environment[name]["value"]
+        for name in {
+            "DEBUGLOG",
+            "IGNORE_VALIDATION",
+            "QUAY_LOGGING",
+            "DB_CONNECTION_POOLING",
+            "QUAY_SERVICES",
+            "QUAY_OVERRIDE_SERVICES",
+        }
+    } == {
+        "DEBUGLOG": "false",
+        "IGNORE_VALIDATION": "false",
+        "QUAY_LOGGING": "stdout",
+        "DB_CONNECTION_POOLING": "true",
+        "QUAY_SERVICES": "",
+        "QUAY_OVERRIDE_SERVICES": (
+            "gunicorn-registry=false,gunicorn-web=false,gunicorn-secscan=false"
+        ),
+    }
+
+
+def test_worker_services_have_independent_flags_and_worker_selectors():
+    resources = render("runtime.yaml", "--set", "workers.services.metrics.enabled=false")
+    services = [
+        service
+        for service in by_kind(resources, "Service")
+        if service["metadata"]["labels"]["app.kubernetes.io/component"] == "bkg-workers"
+    ]
+    assert [service["metadata"]["name"] for service in services] == ["test-quay-workers-grpc"]
+    assert services[0]["spec"]["ports"] == [
+        {"name": "grpc", "protocol": "TCP", "port": 443, "targetPort": 55443}
+    ]
+    assert services[0]["spec"]["selector"]["app.kubernetes.io/component"] == "bkg-workers"
+
+    resources = render("runtime.yaml", "--set", "workers.services.grpc.enabled=false")
+    services = [
+        service
+        for service in by_kind(resources, "Service")
+        if service["metadata"]["labels"]["app.kubernetes.io/component"] == "bkg-workers"
+    ]
+    assert [service["metadata"]["name"] for service in services] == ["test-quay-workers-metrics"]
+    assert services[0]["spec"]["ports"] == [
+        {"name": "metrics", "protocol": "TCP", "port": 9091, "targetPort": 9091}
+    ]
+    assert services[0]["spec"]["selector"]["app.kubernetes.io/component"] == "bkg-workers"
 
 
 def test_shared_rbac_uses_existing_service_account():

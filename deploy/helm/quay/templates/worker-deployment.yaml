@@ -1,0 +1,91 @@
+{{- if .Values.workers.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ printf "%s-workers" (include "quay.fullname" .) | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "quay.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bkg-workers
+spec:
+  replicas: {{ .Values.workers.replicaCount }}
+  minReadySeconds: {{ .Values.workers.minReadySeconds }}
+  progressDeadlineSeconds: {{ .Values.workers.progressDeadlineSeconds }}
+  revisionHistoryLimit: {{ .Values.workers.revisionHistoryLimit }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: {{ .Values.workers.strategy.rollingUpdate.maxUnavailable }}
+      maxSurge: {{ .Values.workers.strategy.rollingUpdate.maxSurge }}
+  selector:
+    matchLabels:
+      {{- include "quay.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: bkg-workers
+  template:
+    metadata:
+      labels:
+        {{- include "quay.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: bkg-workers
+    spec:
+      terminationGracePeriodSeconds: {{ .Values.workers.terminationGracePeriodSeconds }}
+      serviceAccountName: {{ default (include "quay.fullname" .) .Values.serviceAccount.name }}
+      volumes:
+        - name: configvolume
+          secret:
+            secretName: {{ .Values.config.existingSecret }}
+      nodeSelector:
+        {{- toYaml .Values.workers.nodeSelector | nindent 8 }}
+      affinity:
+        {{- toYaml .Values.workers.affinity | nindent 8 }}
+      containers:
+        - name: quay-workers
+          image: {{ include "quay.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /quay-registry/quay-entrypoint.sh
+            - {{ .Values.workers.entrypoint }}
+          ports:
+            - name: grpc
+              containerPort: 55443
+            - name: metrics
+              containerPort: 9091
+          volumeMounts:
+            - name: configvolume
+              mountPath: /conf/stack
+          startupProbe:
+            failureThreshold: {{ .Values.workers.startupProbe.failureThreshold }}
+            periodSeconds: {{ .Values.workers.startupProbe.periodSeconds }}
+            tcpSocket:
+              port: 50051
+          readinessProbe:
+            failureThreshold: {{ .Values.workers.readinessProbe.failureThreshold }}
+            successThreshold: {{ .Values.workers.readinessProbe.successThreshold }}
+            periodSeconds: {{ .Values.workers.readinessProbe.periodSeconds }}
+            tcpSocket:
+              port: 50051
+          livenessProbe:
+            failureThreshold: {{ .Values.workers.livenessProbe.failureThreshold }}
+            periodSeconds: {{ .Values.workers.livenessProbe.periodSeconds }}
+            tcpSocket:
+              port: 50051
+          resources:
+            {{- toYaml .Values.workers.resources | nindent 12 }}
+          env:
+            - name: QE_K8S_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: QE_K8S_CONFIG_SECRET
+              value: {{ .Values.config.existingSecret | quote }}
+            - name: DEBUGLOG
+              value: {{ .Values.workers.environment.DEBUGLOG | quote }}
+            - name: IGNORE_VALIDATION
+              value: {{ .Values.workers.environment.IGNORE_VALIDATION | quote }}
+            - name: QUAY_LOGGING
+              value: {{ .Values.workers.environment.QUAY_LOGGING | quote }}
+            - name: DB_CONNECTION_POOLING
+              value: {{ .Values.workers.environment.DB_CONNECTION_POOLING | quote }}
+            - name: QUAY_SERVICES
+              value: {{ .Values.workers.environment.QUAY_SERVICES | quote }}
+            - name: QUAY_OVERRIDE_SERVICES
+              value: {{ .Values.workers.environment.QUAY_OVERRIDE_SERVICES | quote }}
+{{- end }}
